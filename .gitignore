@@ -1,0 +1,13 @@
+# Project files
+SpotifyDownloads_YTDLP/
+
+# Virtual Environment
+venv
+.venv
+
+# Build/Dist
+build/
+dist/
+
+# Others
+*.spec
