@@ -269,7 +269,7 @@ class SpotifyJSONDownloader:
         self.log(f"Searching for: {search_query}\n")
         
         safe_download_path = shlex.quote(download_path) if sys.platform != 'win32' else download_path
-        output_template = os.path.join(safe_download_path, "%(title)s.%(ext)s")
+        output_template = os.path.join(safe_download_path, f"{self._sanitize_filename(track_name)} - {self._sanitize_filename(', '.join(artist_names))}.%(ext)s")
         
         cmd = [self.yt_dlp_path, 
                "-x",  # Extract audio
