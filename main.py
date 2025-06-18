@@ -208,13 +208,24 @@ class SpotifyJSONDownloader:
         self.log(f"Using yt-dlp from: {self.yt_dlp_path}\n")
         self.log(f"Using ffprobe from: {self.ffprobe_exe_path}\n")
 
+        if not self.filepath:
+            self.master.after(0, lambda: messagebox.showerror("Error", "JSON file path is not set. Please select a JSON file."))
+            return
+
         json_filename_base = os.path.basename(self.filepath).rsplit('.', 1)[0]
         
-        base_parent_dir = "SpotifyDownloads_YTDLP"
-        os.makedirs(base_parent_dir, exist_ok=True)
-
+        music_dir = os.path.expanduser("~/Music")
+        fallback_dir = os.path.expanduser("~/SpotifyDownloader")
         playlist_folder_name = self._sanitize_filename(json_filename_base)
-        download_dir = os.path.join(base_parent_dir, playlist_folder_name)
+
+        try:
+            download_dir = os.path.join(music_dir, playlist_folder_name)
+            os.makedirs(download_dir, exist_ok=True)
+        except OSError:
+            self.log("Could not create directory in Music folder. Falling back to SpotifyDownloader in user directory.")
+            download_dir = os.path.join(fallback_dir, playlist_folder_name)
+            self.master.after(0, lambda: messagebox.showwarning("Directory Fallback", "Could not create directory in Music folder. Falling back to SpotifyDownloader in user directory."))
+            os.makedirs(download_dir, exist_ok=True)
         
         if os.path.exists(download_dir):
             try:
