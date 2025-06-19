@@ -22,22 +22,32 @@ except ImportError:
     Path = None
     # If Path is not available, fall back to os.path functions
 class AskPlaylistExistsDialog(tk.Toplevel):
-    def __init__(self, parent, playlist_name, num_files):
+    def __init__(self, parent, playlist_name, num_files, existing_folders=None):
         super().__init__(parent)
         self.transient(parent)
         self.title("Playlist Exists")
         self.result = "cancel"  # Default to cancel
+        self.selected_folder = None
 
         message = f"The folder for '{playlist_name}' already exists and contains {num_files} files."
         tk.Label(self, text=message, wraplength=350).pack(padx=20, pady=10)
-        
-        tk.Label(self, text="What would you like to do?").pack(pady=5)
+        tk.Label(self, text="Select an existing folder or create a new one:").pack(pady=5)
+
+        self.folder_var = tk.StringVar()
+        self.folder_var.set(None)  # Ensure no folder is selected by default
+        folder_frame = tk.Frame(self)
+        folder_frame.pack(pady=5)
+
+        if existing_folders:
+            existing_folders = sorted(existing_folders)
+            for folder in existing_folders:
+                tk.Radiobutton(folder_frame, text=folder, variable=self.folder_var, value=folder).pack(anchor='w')
 
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=10)
 
+        tk.Button(btn_frame, text="Use Selected Folder", command=self.on_update).pack(side=tk.LEFT, padx=5, pady=5)
         tk.Button(btn_frame, text="Create New Folder", command=self.on_create_new).pack(side=tk.LEFT, padx=5, pady=5)
-        tk.Button(btn_frame, text="Update Existing Folder", command=self.on_update).pack(side=tk.LEFT, padx=5, pady=5)
         tk.Button(btn_frame, text="Cancel", command=self.on_cancel).pack(side=tk.LEFT, padx=5, pady=5)
 
         self.grab_set()
@@ -48,19 +58,21 @@ class AskPlaylistExistsDialog(tk.Toplevel):
         x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.winfo_width() // 2)
         y = parent.winfo_y() + (parent.winfo_height() // 2) - (self.winfo_height() // 2)
         self.geometry(f"+{x}+{y}")
-
         self.wait_window(self)
 
     def on_create_new(self):
         self.result = "new"
+        self.selected_folder = None
         self.destroy()
 
     def on_update(self):
         self.result = "update"
+        self.selected_folder = self.folder_var.get()
         self.destroy()
 
     def on_cancel(self):
         self.result = "cancel"
+        self.selected_folder = None
         self.destroy()
 
 class SpotifyJSONDownloader:
@@ -227,14 +239,41 @@ class SpotifyJSONDownloader:
             self.master.after(0, lambda: messagebox.showwarning("Directory Fallback", "Could not create directory in Music folder. Falling back to SpotifyDownloader in user directory."))
             os.makedirs(download_dir, exist_ok=True)
         
+        # Gather all existing folders that match the playlist_folder_name pattern
+        parent_dir = os.path.dirname(download_dir)
+        base_name = os.path.basename(download_dir)
+        existing_folders = []
+        if os.path.exists(parent_dir):
+            for name in os.listdir(parent_dir):
+                full_path = os.path.join(parent_dir, name)
+                if os.path.isdir(full_path) and (name == base_name or name.startswith(base_name + "_")):
+                    existing_folders.append(name)
+        
+        # If only one existing folder and it is empty, skip dialog and use it directly
+        if len(existing_folders) == 1:
+            only_folder = os.path.join(parent_dir, existing_folders[0])
+            try:
+                num_files = len([name for name in os.listdir(only_folder) if os.path.isfile(os.path.join(only_folder, name))])
+            except OSError:
+                num_files = 0
+            if num_files == 0:
+                download_dir = only_folder
+                os.makedirs(download_dir, exist_ok=True)
+                self.download_dir = download_dir
+                self.master.after(0, lambda: self.select_btn.config(state='disabled'))
+                self.master.after(0, lambda: self.download_btn.config(state='disabled'))
+                threading.Thread(target=self.download).start()
+                return
+        
         if os.path.exists(download_dir):
             try:
                 num_files = len([name for name in os.listdir(download_dir) if os.path.isfile(os.path.join(download_dir, name))])
             except OSError:
                 num_files = 0
 
-            dialog = AskPlaylistExistsDialog(self.master, playlist_folder_name, num_files)
+            dialog = AskPlaylistExistsDialog(self.master, playlist_folder_name, num_files, existing_folders=existing_folders)
             choice = dialog.result
+            selected_folder = dialog.selected_folder
 
             if choice == "new":
                 i = 1
@@ -243,12 +282,10 @@ class SpotifyJSONDownloader:
                     download_dir = f"{original_download_dir}_{i}"
                     i += 1
                 os.makedirs(download_dir)
-            elif choice == "update":
-                # download_dir is already correct, the download method will handle updating
-                pass
+            elif choice == "update" and selected_folder:
+                download_dir = os.path.join(parent_dir, selected_folder)
             else: # "cancel" or window closed
                 self.log("Download cancelled by user.\n")
-                # Re-enable buttons
                 self.master.after(0, lambda: self.select_btn.config(state='normal'))
                 self.master.after(0, lambda: self.download_btn.config(state='normal'))
                 return
